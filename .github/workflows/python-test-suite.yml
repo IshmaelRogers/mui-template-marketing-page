@@ -1,0 +1,66 @@
+name: python-test-suite
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: python-test-suite
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f package.json || (echo "::error::package.json missing" && exit 1)
+
+          if [[ -f package-lock.json ]]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Lint
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run lint
+
+      - name: Typecheck (if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if node -e "process.exit(require('./package.json').scripts?.typecheck ? 0 : 1)"; then
+            npm run typecheck
+          else
+            echo "No typecheck script found; skipping."
+          fi
+
+      - name: Test
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm test
+
+      - name: Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build
