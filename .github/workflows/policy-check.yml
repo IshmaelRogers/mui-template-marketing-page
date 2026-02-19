@@ -1,0 +1,67 @@
+name: policy-check
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  policy:
+    name: policy-check
+    runs-on: ubuntu-latest
+    env:
+      # Lock to your Jira project key. Change if you want to allow other keys.
+      JIRA_KEY_REGEX: '^SCRUM-[0-9]+'
+      REQUIRE_TDD_BLOCK: 'true'
+
+    steps:
+      - name: Validate PR metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PR_TITLE="$(jq -r '.pull_request.title // ""' "$GITHUB_EVENT_PATH")"
+          PR_BODY="$(jq -r '.pull_request.body  // ""' "$GITHUB_EVENT_PATH")"
+          PR_BRANCH="$(jq -r '.pull_request.head.ref // ""' "$GITHUB_EVENT_PATH")"
+
+          echo "PR title:  $PR_TITLE"
+          echo "PR branch: $PR_BRANCH"
+
+          # Title must BEGIN with Jira key
+          if [[ ! "$PR_TITLE" =~ $JIRA_KEY_REGEX ]]; then
+            echo "::error::PR title must start with a Jira key (regex: $JIRA_KEY_REGEX). Example: SCRUM-123: Add feature"
+            exit 1
+          fi
+          if [[ ! "$PR_TITLE" =~ ^$JIRA_KEY_REGEX ]]; then
+            echo "::error::PR title must BEGIN with Jira key. Example: SCRUM-123: ..."
+            exit 1
+          fi
+
+          # Branch must CONTAIN Jira key
+          if [[ ! "$PR_BRANCH" =~ $JIRA_KEY_REGEX ]]; then
+            echo "::error::Branch name must include Jira key (regex: $JIRA_KEY_REGEX). Example: feature/SCRUM-123-login-form"
+            exit 1
+          fi
+
+          # TDD Evidence required
+          if [[ "$REQUIRE_TDD_BLOCK" == "true" ]]; then
+            BODY_NORM="$(printf "%s" "$PR_BODY" | tr -d '\r')"
+
+            if ! grep -qiE '^[[:space:]]*RED[[:space:]]*:' <<< "$BODY_NORM"; then
+              echo "::error::PR body must include TDD evidence marker 'RED:'"
+              exit 1
+            fi
+            if ! grep -qiE '^[[:space:]]*GREEN[[:space:]]*:' <<< "$BODY_NORM"; then
+              echo "::error::PR body must include TDD evidence marker 'GREEN:'"
+              exit 1
+            fi
+            if ! grep -qiE '^[[:space:]]*REFACTOR[[:space:]]*:' <<< "$BODY_NORM"; then
+              echo "::error::PR body must include TDD evidence marker 'REFACTOR:'"
+              exit 1
+            fi
+          fi
+
+          echo "policy-check passed."
